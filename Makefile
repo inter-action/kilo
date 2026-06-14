@@ -1,6 +1,6 @@
 
 kilo: kilo.c
-	$(CC) -Wno-strict-prototypes kilo.c -o kilo -Wall -Wextra -pedantic -std=c99
+	$(CC) -Wno-strict-prototypes -g -O0 kilo.c -o kilo -Wall -Wextra -pedantic -std=c99
 
 run:
 	./kilo
