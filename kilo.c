@@ -42,6 +42,7 @@ struct editorConfig {
 
   // scrolling
   int rowoff;
+  int coloff;
 
   // total screen columns & rows, 1 based
   int screenrows;
@@ -313,10 +314,11 @@ void editorDrawRows(struct abuf *ab) {
         abAppend(ab, "~", 1);
       }
     } else {
-      int len = E.row[filerow].size;
+      int len = E.row[filerow].size - E.coloff;
+      if (len < 0) len = 0;
       if (len > E.screencols)
         len = E.screencols;
-      abAppend(ab, E.row[filerow].chars, len);
+      abAppend(ab, &E.row[filerow].chars[E.coloff], len);
     }
 
     // clear from cursor position to end of line
@@ -342,7 +344,8 @@ void editorRefreshScreen() {
 
   // position cursor
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
+  //                                        ^ make cusor position relative to viewport
   abAppend(&ab, buf, strlen(buf));
 
   // show cursor
@@ -423,6 +426,7 @@ void initEditor() {
   E.cx = 0;
   E.cy = 0;
   E.rowoff = 0;
+  E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
 
