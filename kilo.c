@@ -40,6 +40,9 @@ struct editorConfig {
   int cx;
   int cy;
 
+  // scrolling
+  int rowoff;
+
   // total screen columns & rows, 1 based
   int screenrows;
   int screencols;
@@ -275,10 +278,21 @@ void abFree(struct abuf *ab) {
 
 /*** output ***/
 
+void editorScroll() {
+  if (E.cy < E.rowoff) {
+    E.rowoff = E.cy;
+  }
+
+  if (E.cy >= E.rowoff + E.screenrows) {
+    E.rowoff = E.cy - E.screenrows + 1; // why adding one ?
+  }
+}
+
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    if (y >= E.numrows) {
+    int filerow = y + E.rowoff;
+    if (filerow >= E.numrows) {
       if (E.numrows == 0 && y == E.screenrows / 3) {
         char welcome[80];
         int welcomelen = snprintf(welcome, sizeof(welcome),
@@ -299,10 +313,10 @@ void editorDrawRows(struct abuf *ab) {
         abAppend(ab, "~", 1);
       }
     } else {
-      int len = E.row[y].size;
+      int len = E.row[filerow].size;
       if (len > E.screencols)
         len = E.screencols;
-      abAppend(ab, E.row[y].chars, len);
+      abAppend(ab, E.row[filerow].chars, len);
     }
 
     // clear from cursor position to end of line
@@ -314,6 +328,8 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorRefreshScreen() {
+  editorScroll();
+
   struct abuf ab = ABUF_INIT;
 
   // hide cursor
@@ -329,8 +345,6 @@ void editorRefreshScreen() {
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
   abAppend(&ab, buf, strlen(buf));
 
-  // move cursor to top, left
-  abAppend(&ab, "\x1b[H", 3);
   // show cursor
   abAppend(&ab, "\x1b[?25h", 6);
 
@@ -345,7 +359,7 @@ void editorRefreshScreen() {
 
 /*** input ***/
 
-void editorMoveCursor(int key) {
+void editorMoveCursor(int key) { // this is the only thing that can drive scroll
   switch (key) {
   case ARROW_LEFT:
     if (E.cx != 0) {
@@ -363,7 +377,7 @@ void editorMoveCursor(int key) {
     }
     break;
   case ARROW_DOWN:
-    if (E.cy != E.screenrows - 1) {
+    if (E.cy < E.numrows) {
       E.cy++;
     }
     break;
@@ -408,6 +422,7 @@ void editorProcessKeypress() {
 void initEditor() {
   E.cx = 0;
   E.cy = 0;
+  E.rowoff = 0;
   E.numrows = 0;
   E.row = NULL;
 
