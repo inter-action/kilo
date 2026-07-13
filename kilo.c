@@ -287,6 +287,15 @@ void editorScroll() {
   if (E.cy >= E.rowoff + E.screenrows) {
     E.rowoff = E.cy - E.screenrows + 1; // why adding one ?
   }
+
+  // update scroll view on x axis
+  if (E.cx < E.coloff) { // scroll column offset
+    E.coloff = E.cx;
+  }
+
+  if (E.cx >= E.coloff + E.screencols) {
+    E.coloff = E.cx - E.screencols + 1;
+  }
 }
 
 void editorDrawRows(struct abuf *ab) {
@@ -315,7 +324,8 @@ void editorDrawRows(struct abuf *ab) {
       }
     } else {
       int len = E.row[filerow].size - E.coloff;
-      if (len < 0) len = 0;
+      if (len < 0)
+        len = 0;
       if (len > E.screencols)
         len = E.screencols;
       abAppend(ab, &E.row[filerow].chars[E.coloff], len);
@@ -344,8 +354,10 @@ void editorRefreshScreen() {
 
   // position cursor
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
-  //                                        ^ make cusor position relative to viewport
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
+           (E.cx - E.coloff) + 1);
+  //                                        ^ make cursor position relative to
+  //                                        viewport
   abAppend(&ab, buf, strlen(buf));
 
   // show cursor
@@ -363,15 +375,23 @@ void editorRefreshScreen() {
 /*** input ***/
 
 void editorMoveCursor(int key) { // this is the only thing that can drive scroll
+  erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+
   switch (key) {
   case ARROW_LEFT:
     if (E.cx != 0) {
       E.cx--;
+    } else if (E.cy > 0) { // move left from line head
+      E.cy--;
+      E.cx = E.row[E.cy].size;
     }
     break;
   case ARROW_RIGHT:
-    if (E.cx != E.screencols - 1) {
+    if (row && E.cx < row->size) { // one greater than the actual line width
       E.cx++;
+    } else if (row && E.cx == row->size) { // move right from line end
+      E.cx = 0;
+      E.cy++;
     }
     break;
   case ARROW_UP:
@@ -384,6 +404,13 @@ void editorMoveCursor(int key) { // this is the only thing that can drive scroll
       E.cy++;
     }
     break;
+  }
+
+  // snap cursor position on x axis when moving down from the end of above line
+  row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  int rowlen = row ? row->size : 0;
+  if (E.cx > rowlen) {
+    E.cx = rowlen;
   }
 }
 
