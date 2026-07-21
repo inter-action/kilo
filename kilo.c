@@ -15,6 +15,7 @@
 #define IS_LLDB (0)
 #define KILO_VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)
+#define KILO_TAB_STOP 8
 
 enum editorKey {
   ARROW_LEFT = 1000,
@@ -41,6 +42,9 @@ struct editorConfig {
   // current cursor position, 0 based
   int cx;
   int cy;
+  // https://viewsourcecode.org/snaptoken/kilo/04.aTextViewer.html
+  // cursor position that accounted tab size
+  int rx; // a tab in our case is 8 char, rx for a tab is 8 stops
 
   // scrolling
   int rowoff;
@@ -216,14 +220,40 @@ int getWindowSize(int *rows, int *cols) {
 
 /*** row operations ***/
 
-void editorUpdateRow(erow *row) {
-  free(row->render);
-  row->render = malloc(row->size + 1);
-
+int editorRowCxToRx(erow *row, int cx) { // todo: I got no idea what this func
+                                         // do. it doesn't make sense to me
+  int rx = 0;
   int j;
+  for (j = 0; j < cx; j++) {
+    if (row->chars[j] == '\t') {
+      rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
+    }
+    rx++;
+  }
+  return rx;
+}
+
+void editorUpdateRow(erow *row) {
+  int tabs = 0;
+  int j;
+  for (j = 0; j < row->size; j++) {
+    if (row->chars[j] == '\t')
+      tabs++;
+  }
+
+  free(row->render);
+  row->render = malloc(row->size + tabs * (KILO_TAB_STOP - 1) +
+                       1); // '+1', the ending '\n'
+
   int idx = 0;
   for (j = 0; j < row->size; j++) {
-    row->render[idx++] = row->chars[j];
+    if (row->chars[j] == '\t') {
+      row->render[idx++] = ' ';
+      while (idx % KILO_TAB_STOP != 0)
+        row->render[idx++] = ' ';
+    } else {
+      row->render[idx++] = row->chars[j];
+    }
   }
   row->render[idx] = '\0';
   row->rsize = idx;
@@ -302,6 +332,11 @@ void abFree(struct abuf *ab) {
 /*** output ***/
 
 void editorScroll() {
+  E.rx = 0;
+  if (E.cy < E.numrows) {
+    E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
+  }
+
   if (E.cy < E.rowoff) {
     E.rowoff = E.cy;
   }
@@ -311,12 +346,13 @@ void editorScroll() {
   }
 
   // update scroll view on x axis
-  if (E.cx < E.coloff) { // scroll column offset
-    E.coloff = E.cx;
+  //
+  if (E.rx < E.coloff) { // scroll column offset
+    E.coloff = E.rx;
   }
 
-  if (E.cx >= E.coloff + E.screencols) {
-    E.coloff = E.cx - E.screencols + 1;
+  if (E.rx >= E.coloff + E.screencols) {
+    E.coloff = E.rx - E.screencols + 1;
   }
 }
 
@@ -373,12 +409,13 @@ void editorRefreshScreen() {
   // move cursor to top, left
   abAppend(&ab, "\x1b[H", 3);
 
+  // rendering text on the screen
   editorDrawRows(&ab);
 
   // position cursor
   char buf[32];
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
-           (E.cx - E.coloff) + 1);
+           (E.rx - E.coloff) + 1);
   //                                        ^ make cursor position relative to
   //                                        viewport
   abAppend(&ab, buf, strlen(buf));
@@ -475,6 +512,7 @@ void editorProcessKeypress() {
 void initEditor() {
   E.cx = 0;
   E.cy = 0;
+  E.rx = 0;
   E.rowoff = 0;
   E.coloff = 0;
   E.numrows = 0;
