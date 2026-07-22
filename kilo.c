@@ -220,15 +220,22 @@ int getWindowSize(int *rows, int *cols) {
 
 /*** row operations ***/
 
-int editorRowCxToRx(erow *row, int cx) { // todo: I got no idea what this func
-                                         // do. it doesn't make sense to me
+int editorRowCxToRx(erow *row, int cx) {
+  // \t 的行为：光标跳到下一个制表位（tab stop），不是固定增加 N 列。
+  // 制表位：0,8,16,24...（tabstop=8）。
+  // 👉 视觉占多少空格，取决于\t前面文字占用了多少列。
+  // 这是 VT100 终端、Linux/macOS 终端、Vim、nano、kilo 统一遵守的古老标准。
   int rx = 0;
   int j;
   for (j = 0; j < cx; j++) {
     if (row->chars[j] == '\t') {
-      rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
+      rx += (KILO_TAB_STOP - 1) -
+            (rx %
+             KILO_TAB_STOP); // it seems this makes rx align with KILO_TAB_STOP
     }
     rx++;
+    // same as rx = ((rx / KILO_TAB_STOP) + 1) * KILO_TAB_STOP; when encontering
+    // \t
   }
   return rx;
 }
@@ -332,6 +339,7 @@ void abFree(struct abuf *ab) {
 /*** output ***/
 
 void editorScroll() {
+  // setting rowoff and coloff
   E.rx = 0;
   if (E.cy < E.numrows) {
     E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
@@ -392,18 +400,19 @@ void editorDrawRows(struct abuf *ab) {
 
     // clear from cursor position to end of line
     abAppend(ab, "\x1b[K", 3);
-    if (y < E.screenrows - 1) {
-      abAppend(ab, "\r\n", 2);
-    }
+    abAppend(ab, "\r\n", 2); // move to cursor to next line
   }
 }
 
 void editorRefreshScreen() {
+  // rendering function
+
+  // update scroll position base on cursor position
   editorScroll();
 
   struct abuf ab = ABUF_INIT;
 
-  // hide cursor
+  // hide cursor (physical)
   abAppend(&ab, "\x1b[?25l", 6);
 
   // move cursor to top, left
@@ -491,6 +500,14 @@ void editorProcessKeypress() {
 
   case PAGE_UP:
   case PAGE_DOWN: {
+    if (c == PAGE_UP) {
+      E.cy = E.rowoff;
+    } else if (c == PAGE_DOWN) {
+      E.cy = E.rowoff + E.screenrows - 1;
+      if (E.cy > E.numrows)
+        E.cy = E.numrows;
+    }
+
     int times = E.screenrows;
     while (times--) {
       editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -521,6 +538,8 @@ void initEditor() {
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
     die("getWindowSize");
   }
+
+  E.screenrows -= 1;
 }
 
 int main(int argc, char *argv[]) {
